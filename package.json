@@ -1,0 +1,55 @@
+{
+  "name": "x402-arc",
+  "version": "0.1.0",
+  "description": "Accept x402 payments on Circle's Arc L1 (chain 5042) via client-broadcast EIP-3009 — no facilitator required, because gas is USDC.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --import tsx test/*.test.ts"
+  },
+  "keywords": [
+    "x402",
+    "arc",
+    "circle",
+    "usdc",
+    "eip-3009",
+    "agent-payments",
+    "402"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "viem": ">=2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "viem": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.1",
+    "@x402/core": "^2.13.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "viem": "^2.21.0"
+  }
+}
