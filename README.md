@@ -87,6 +87,12 @@ const header = toPaymentHeader(payment, requirements);
 await fetch(url, { headers: { "PAYMENT-SIGNATURE": header, "X-PAYMENT": header } });
 ```
 
+**Attributing the payment.** With client-broadcast the payer is not in the payment header — it is the
+`from` of an on-chain transfer — so a server that logs "who paid" from the header alone records the
+rail, not the buyer, and a rail tag in a revenue dashboard reads as an anonymous external customer.
+`facilitator.payerOf(txHash)` returns the address the facilitator resolved while verifying, or `null`
+rather than a guess.
+
 `readPaymentRequired(res)` reads the challenge from either transport: the JSON body, or the
 `payment-required` header (base64), which is what x402 v2 servers actually put on the wire — a buyer
 that only knows one of the two silently fails against half the servers it meets.

@@ -77,6 +77,17 @@ export class ArcLocalFacilitator {
   private readonly rpc: ArcRpc;
   private readonly now: () => number;
 
+  /**
+   * txHash → payer, filled during verification.
+   *
+   * With client-broadcast the payer is NOT in the payment header — it is the `from` of an on-chain
+   * transfer — so a server that logs "who paid" from the header alone can only record the rail, and a
+   * rail tag in a revenue dashboard reads as an anonymous external buyer. That is how our own test
+   * payment first showed up as $0.03 of external revenue. The facilitator already resolves the real
+   * address while verifying, so it keeps it here for the caller to attribute.
+   */
+  private readonly payers = new Map<string, { payer: string; until: number }>();
+
   constructor(opts: ArcFacilitatorOptions) {
     const chain = ARC[opts.chain ?? "mainnet"];
     this.challengeMode = opts.challengeMode ?? "client-nonce";
@@ -219,6 +230,29 @@ export class ArcLocalFacilitator {
     };
   }
 
+  /**
+   * The address that paid this transaction, if this facilitator verified it recently.
+   *
+   * Returns null rather than guessing: the caller should record "unattributed" over a wrong address.
+   */
+  payerOf(txHash: string): string | null {
+    const hit = this.payers.get(String(txHash).toLowerCase());
+    if (!hit) return null;
+    if (hit.until <= this.now()) {
+      this.payers.delete(String(txHash).toLowerCase());
+      return null;
+    }
+    return hit.payer;
+  }
+
+  private rememberPayer(txHash: string, payer: string): void {
+    const now = this.now();
+    // Bounded: sweep expired entries, and never grow without limit on a flood of distinct hashes.
+    for (const [k, v] of this.payers) if (v.until <= now) this.payers.delete(k);
+    if (this.payers.size >= 5000) return;
+    this.payers.set(String(txHash).toLowerCase(), { payer, until: now + 10 * 60_000 });
+  }
+
   /** Everything both verify() and settle() need, in one place so they cannot diverge. */
   private async check(
     payload: PaymentPayload,
@@ -297,6 +331,7 @@ export class ArcLocalFacilitator {
     );
     if (!result.ok) return bad(result.reason, result.message);
 
+    this.rememberPayer(receipt.transactionHash ?? txHash, result.payer);
     return {
       ok: true,
       payer: result.payer,

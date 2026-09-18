@@ -281,3 +281,14 @@ test("settle cannot be called twice, even without a verify in between", async ()
   assert.equal(second.success, false, "a direct settle path must not double-spend");
   assert.equal(second.errorReason, "authorization_already_spent");
 });
+
+test("the facilitator remembers who paid, so a server can attribute the payment", async () => {
+  const req = requirements();
+  const c = "1".repeat(32);
+  const { f } = facilitatorFor(clientNonceFor(c, bindingOf(req)), {}, {}, "client-nonce");
+  assert.equal(f.payerOf(TX), null, "nothing is claimed before verification");
+
+  await f.verify({ x402Version: 2, accepted: req, payload: { transaction: TX, clientNonce: c } }, req);
+  assert.equal(f.payerOf(TX), PAYER.toLowerCase(), "the on-chain payer, not the rail name");
+  assert.equal(f.payerOf("0x" + "99".repeat(32)), null, "an unknown tx must return null, never a guess");
+});
