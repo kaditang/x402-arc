@@ -23,7 +23,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test --import tsx test/*.test.ts"
+    "test": "node --test --import tsx test/*.test.ts",
+    "prepublishOnly": "npm whoami > /dev/null 2>&1 || (echo 'npm auth has expired — run: npm login   (an expired token surfaces as a confusing E404 on publish, not E401)' && exit 1) && npm test && npm run build"
   },
   "keywords": [
     "x402",
