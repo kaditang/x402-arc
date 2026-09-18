@@ -10,9 +10,11 @@ Working end to end on **Arc mainnet** and **Arc testnet** today.
 
 | | |
 |---|---|
-| Mainnet payment | [`0x8b7869c2…`](https://explorer.arc.io/tx/0x8b7869c28f2e3027408410800f0c90df13f35c176ec0053ca9a43b96bbe4a4b6) |
+| Mainnet payment | [`0xa33aa96f…`](https://explorer.arc.io/tx/0xa33aa96f529bb9d8ef399dc1c73fa94b21f13314f0384e7e52c434535d31487e) — bought a live paid API response |
+| Reference server | [`0x8b7869c2…`](https://explorer.arc.io/tx/0x8b7869c28f2e3027408410800f0c90df13f35c176ec0053ca9a43b96bbe4a4b6) |
+| In production | [stockwaves.net/arc](https://stockwaves.net/arc) — every endpoint at $0.03+ accepts Arc |
 | Testnet payment | [`0xba2d36e3…`](https://explorer.testnet.arc.io/tx/0xba2d36e307447a88645595407af5f652f6a149e2cf75f2bb0fbec8fc97fc97b1) |
-| Tests | 38, no network required |
+| Tests | 49, no network required |
 | Runtime dependencies (server) | none |
 
 ---
@@ -38,8 +40,10 @@ next to the Base and Solana rails, because registration is per network.
 
 ## Install
 
+Not published to npm yet — install from source:
+
 ```bash
-npm install x402-arc
+git clone https://github.com/kaditang/x402-arc && cd x402-arc && npm install && npm run build
 ```
 
 ## Server
@@ -47,9 +51,9 @@ npm install x402-arc
 ```ts
 import { ArcExactScheme, ArcLocalFacilitator } from "x402-arc";
 
-const secret = process.env.ARC_SECRET!;          // the one value both halves must share
-const scheme      = new ArcExactScheme({ chain: "mainnet", secret });
-const facilitator = new ArcLocalFacilitator({ chain: "mainnet", secret });
+// No shared secret needed in the default (client-nonce) mode; `challengeMode: "seed"` takes one.
+const scheme      = new ArcExactScheme({ chain: "mainnet" });
+const facilitator = new ArcLocalFacilitator({ chain: "mainnet" });
 
 // 402 challenge
 const accepts = await scheme.enhancePaymentRequirements({
@@ -59,7 +63,7 @@ const accepts = await scheme.enhancePaymentRequirements({
   extra: { resource: "https://api.example.com/thing" },
 });
 
-// paid retry — claim BEFORE serving (see "upfront", below)
+// paid retry. verify() claims the payment, so call it BEFORE your handler runs (see below)
 const settled = await facilitator.settle(payload, requirements);
 if (!settled.success) return http402(settled.errorReason);
 ```
@@ -78,8 +82,14 @@ new x402ResourceServer([cdpFacilitator, arcFacilitator])
 import { payOnArc, toPaymentHeader } from "x402-arc/client";
 
 const payment = await payOnArc({ privateKey: KEY, requirements, chain: "mainnet" });
-await fetch(url, { headers: { "X-PAYMENT": toPaymentHeader(payment, requirements) } });
+// v2 servers read `payment-signature`; older adapters read `X-PAYMENT`. Same value either way.
+const header = toPaymentHeader(payment, requirements);
+await fetch(url, { headers: { "PAYMENT-SIGNATURE": header, "X-PAYMENT": header } });
 ```
+
+`readPaymentRequired(res)` reads the challenge from either transport: the JSON body, or the
+`payment-required` header (base64), which is what x402 v2 servers actually put on the wire — a buyer
+that only knows one of the two silently fails against half the servers it meets.
 
 Runnable demo: `examples/server.ts` + `examples/pay.ts`.
 
@@ -96,9 +106,32 @@ canceled"*.
 That is not an edge case. In one production x402 service, a single buyer called one route at one price
 **658 times**.
 
-**Fix:** the server mints a short-lived seed with each 402 challenge; the nonce binds the requirements
-*and* that seed. The seed is an HMAC with an embedded expiry, so the server stays stateless — nothing
-is remembered between challenge and payment — yet every challenge yields a fresh, unforgeable nonce.
+**Fix: the buyer supplies the freshness.** The nonce is `sha256(binding ‖ clientNonce)`, where the
+binding — network, asset, payTo, amount, resource — comes from the **server's** requirements at
+verification time, and `clientNonce` is random per payment. Cross-price and cross-resource reuse stay
+impossible; repeat purchases work.
+
+It has to be the buyer's value rather than a server-minted one, because of where x402 puts the
+challenge: a resource server **rebuilds** the payment requirements when verifying, and `@x402/core`
+matches the rebuilt set against the client's echo (`required.extra ⊆ accepted.extra`). Anything
+per-request in `extra` — a seed, an expiry — makes every valid payment unmatchable, and the failure
+reads as *"no matching requirements"* rather than anything pointing at the nonce. `@x402/core` 2.13,
+which deployments are actually running, has no `dynamicExtraFields` escape hatch.
+
+A server-minted seed (`mintSeed`, `challengeMode: "seed"`) is still there for servers that control
+matching themselves: it authenticates the challenge and gives it an expiry.
+
+## Claim the payment before the handler runs
+
+`@x402/core` settles **after** the handler. With client-broadcast the money moved before the server
+ever saw the request, so settlement only marks the authorization spent — and doing that after the
+handler means a replayed transaction still **executes the request**. Measured on a live server: one
+payment, replayed, produced a second full handler run (upstream calls, rate budget, a duplicate
+"paid" metrics row) while the buyer correctly received a 402.
+
+The claim therefore happens during verification, which runs first — `claimOn: "verify"`, the default.
+Settlement then marks it settled, which is what stops a second settlement on a server that never
+calls verify.
 
 ## What the verifier checks
 
@@ -114,6 +147,7 @@ Each check exists because its absence is exploitable:
 | `Transfer.from == authorizer` | an unrelated transfer in the same block counts |
 | confirmations, receipt age | stale or unmined receipts |
 | spent store | one payment serves unlimited requests |
+| claim at verify, not settle | a replay still runs the handler and does its work for free |
 
 Replay across processes is the one thing a single-instance store cannot cover — behind several
 instances, back `SpentStore` with Redis or a unique constraint.
@@ -145,7 +179,8 @@ up. If your price is a tenth of a cent, the honest answer is that this is not ye
 
 ## Status
 
-Implements an **open, unratified** proposal (filed 2026-09-16, no maintainer decision yet). The
+Implements an **open, unratified** proposal (filed 2026-09-16, no maintainer decision yet); the
+findings above are written up [in the issue](https://github.com/x402-foundation/x402/issues/3504#issuecomment-5722741571). The
 receipt-verification core does not depend on that outcome; the wire format may. Built against
 `@x402/core` 2.26.0 — the compatibility assertions in `test/compat.test.ts` fail loudly if the
 interfaces move.
