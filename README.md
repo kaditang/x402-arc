@@ -40,10 +40,8 @@ next to the Base and Solana rails, because registration is per network.
 
 ## Install
 
-Not published to npm yet — install from source:
-
 ```bash
-git clone https://github.com/kaditang/x402-arc && cd x402-arc && npm install && npm run build
+npm install x402-arc
 ```
 
 ## Server
