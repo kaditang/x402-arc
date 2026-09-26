@@ -10,6 +10,10 @@ import type { AssetAmount, Money, Network, PaymentFlowConfig, PaymentRequirement
 
 export type ArcSchemeOptions = {
   chain?: "mainnet" | "testnet";
+  /** Published in the challenge so a payer knows the depth this seller waits for. Default 1. */
+  confirmations?: number;
+  /** Published in the challenge: how old a receipt may be when presented. Default 600s. */
+  maxReceiptAgeSeconds?: number;
   /** See ArcFacilitatorOptions.challengeMode. Default `client-nonce`. */
   challengeMode?: "client-nonce" | "seed";
   /** Must match the facilitator's secret. Required only in seed mode. */
@@ -63,6 +67,8 @@ export class ArcExactScheme {
   private readonly secret: string;
   private readonly challengeMode: "client-nonce" | "seed";
   private readonly ttlSec: number;
+  private readonly confirmations: number;
+  private readonly maxReceiptAgeSeconds: number;
 
   constructor(opts: ArcSchemeOptions) {
     const chain = ARC[opts.chain ?? "mainnet"];
@@ -75,6 +81,8 @@ export class ArcExactScheme {
     this.asset = opts.asset ?? ARC_USDC;
     this.secret = opts.secret ?? "";
     this.ttlSec = opts.challengeTtlSec ?? 300;
+    this.confirmations = opts.confirmations ?? 1;
+    this.maxReceiptAgeSeconds = opts.maxReceiptAgeSeconds ?? 600;
   }
 
   getAssetDecimals(_asset?: string, _network?: Network): number {
@@ -117,6 +125,10 @@ export class ArcExactScheme {
       verifyingContract: this.asset,
       eip712: ARC_USDC_EIP712,
       decimals: ARC_USDC_DECIMALS,
+      // Both STATIC (see above): a payer reads the seller's policy from the offer, and a constant
+      // value cannot break the rebuilt-requirements match the way a per-request field would.
+      confirmations: this.confirmations,
+      maxReceiptAgeSeconds: this.maxReceiptAgeSeconds,
     };
     if (this.challengeMode === "client-nonce") {
       return { ...requirements, extra: staticExtra };

@@ -15,7 +15,7 @@ export {
   TOPIC_AUTHORIZATION_USED,
   type ArcChain,
 } from "./constants.js";
-export { mintSeed, verifySeed, nonceFor, clientNonceFor, type NonceBinding, type SeedCheck } from "./nonce.js";
+export { mintSeed, verifySeed, nonceFor, clientNonceFor, CLIENT_NONCE_DOMAIN, type NonceBinding, type SeedCheck } from "./nonce.js";
 export { checkPaidReceipt, type RpcLog, type RpcReceipt, type ExpectedPayment, type ReceiptContext, type ReceiptResult } from "./receipt.js";
 export { ArcRpc, RpcBudgetExceeded, type RpcOptions } from "./rpc.js";
 export { MemorySpentStore, type SpentStore } from "./store.js";

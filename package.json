@@ -1,6 +1,6 @@
 {
   "name": "x402-arc",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Accept x402 payments on Circle's Arc L1 (chain 5042) via client-broadcast EIP-3009 — no facilitator required, because gas is USDC.",
   "license": "MIT",
   "type": "module",

@@ -126,11 +126,19 @@ export function clientNonceFor(clientNonce: string, b: NonceBinding): `0x${strin
   if (!/^[0-9a-fA-F]{8,64}$/.test(clientNonce)) {
     throw new Error("clientNonce must be 4-32 bytes of hex");
   }
+  // Byte-for-byte the derivation in the spec draft (spec/scheme_exact_evm_client_broadcast.md):
+  //   SHA-256( DOMAIN || 0x1f || binding || 0x1f || clientNonce )
+  // A versioned domain string and a separator that cannot occur in any field keep two independent
+  // implementations from disagreeing — which is the whole job of this function.
+  const SEP = "\u001f";
   const d = createHash("sha256")
-    .update(`arc-nonce-v2|${canonical(b)}|${clientNonce.toLowerCase()}`)
+    .update(`${CLIENT_NONCE_DOMAIN}${SEP}${canonical(b)}${SEP}${clientNonce.toLowerCase()}`)
     .digest("hex");
   return `0x${d}` as `0x${string}`;
 }
+
+/** Domain separator for the client-broadcast nonce. Versioned: changing the derivation changes this. */
+export const CLIENT_NONCE_DOMAIN = "x402/exact/eip3009-client-broadcast/v1";
 
 /**
  * Seed mode: the EIP-3009 nonce for this (requirements, seed) pair, 32 bytes as the token expects.

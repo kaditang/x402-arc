@@ -3,7 +3,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mintSeed, nonceFor, verifySeed, type NonceBinding } from "../src/nonce.js";
+import { clientNonceFor, mintSeed, nonceFor, verifySeed, type NonceBinding } from "../src/nonce.js";
 import { createHash } from "node:crypto";
 
 const SECRET = "test-secret";
@@ -86,4 +86,45 @@ test("malformed seeds are refused without throwing", () => {
     assert.equal(r.ok, false);
   }
   assert.equal(verifySeed(SECRET, undefined as unknown as string, B, NOW).ok, false);
+});
+
+/**
+ * SPEC CONFORMANCE — a known-answer vector for the client-broadcast nonce.
+ *
+ * The other tests only prove both halves of THIS package agree with each other, which they would
+ * keep doing after a refactor that silently walked away from the published derivation. This one
+ * recomputes the digest straight from the formula in spec/scheme_exact_evm_client_broadcast.md:
+ *
+ *   SHA-256( "x402/exact/eip3009-client-broadcast/v1" || 0x1f || binding || 0x1f || clientNonce )
+ *   binding = JSON array [network, asset, payTo, amount, resource], addresses lowercased
+ *
+ * If the two ever disagree, one of the two is wrong and both are public.
+ */
+test("the nonce matches the spec's derivation byte for byte", () => {
+  const b: NonceBinding = {
+    network: "eip155:5042",
+    asset: "0x3600000000000000000000000000000000000000",
+    payTo: "0x209693Bc6afc0C5328bA36FaF03C514EF312287C",
+    amount: "30000",
+    resource: "https://api.example.com/premium-data",
+  };
+  const clientNonce = "9f2c4d1ab7e35608f1a0c4d29e7b5531";
+
+  const binding = JSON.stringify([
+    b.network,
+    b.asset.toLowerCase(),
+    b.payTo.toLowerCase(),
+    b.amount,
+    b.resource,
+  ]);
+  const expected =
+    "0x" +
+    createHash("sha256")
+      .update(`x402/exact/eip3009-client-broadcast/v1\u001f${binding}\u001f${clientNonce}`)
+      .digest("hex");
+
+  assert.equal(clientNonceFor(clientNonce, b), expected);
+  // Case of the payer's hex must not change the result, and neither must address checksumming.
+  assert.equal(clientNonceFor(clientNonce.toUpperCase(), b), expected);
+  assert.equal(clientNonceFor(clientNonce, { ...b, asset: b.asset.toUpperCase().replace("0X", "0x") }), expected);
 });
